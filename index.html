@@ -1,1 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Thiamson - Comptage Visuel Instantané</title>
+    <style>
+        :root {
+            --primary: #1e40af;
+            --primary-dark: #1e3a8a;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-color: #0f172a;
+            --border-color: #cbd5e1;
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 12px;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: var(--card-bg);
+            border-radius: 20px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        header {
+            text-align: center;
+        }
+
+        h1 {
+            color: var(--primary);
+            font-size: 1.4rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        p.subtitle {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .result-card {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            color: white;
+            border-radius: 16px;
+            padding: 16px;
+            text-align: center;
+            box-shadow: 0 4px 14px rgba(30,64,175,0.25);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .result-card .title-detected {
+            font-size: 0.95rem;
+            font-weight: 600;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .result-card .value {
+            font-size: 3.8rem;
+            font-weight: 900;
+            line-height: 1;
+            margin: 6px 0;
+        }
+
+        .result-card .status-tag {
+            font-size: 0.75rem;
+            background: rgba(255,255,255,0.2);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .btn {
+            border: none;
+            padding: 16px;
+            border-radius: 14px;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            text-align: center;
+            background: var(--primary);
+            color: white;
+            width: 100%;
+            transition: transform 0.1s, background-color 0.2s;
+            box-shadow: 0 4px 12px rgba(30,64,175,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            box-shadow: 0 4px 12px rgba(239,68,68,0.2);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--primary);
+            border: 2px solid var(--primary);
+            box-shadow: none;
+            padding: 10px;
+            font-size: 0.88rem;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .workspace {
+            position: relative;
+            width: 100%;
+            min-height: 300px;
+            background: #0f172a;
+            border-radius: 14px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed var(--border-color);
+        }
+
+        .placeholder {
+            color: #94a3b8;
+            text-align: center;
+            padding: 24px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        canvas {
+            max-width: 100%;
+            max-height: 55vh;
+            display: block;
+            touch-action: none;
+        }
+
+        .mode-selector {
+            display: flex;
+            gap: 8px;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 12px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            background: transparent;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+        }
+
+        .mode-btn.active {
+            background: white;
+            color: var(--primary);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+        }
+
+        .instructions {
+            font-size: 0.8rem;
+            color: #475569;
+            background: #f1f5f9;
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Thiamson Comptage</h1>
+            <p class="subtitle">Analyse visuelle & Pointage instantané</p>
+        </header>
+
+        <div class="result-card">
+            <div class="title-detected" id="status-title">Total Détecté</div>
+            <div class="value" id="count-display">0</div>
+            <div class="status-tag" id="status-tag">Pr
 
