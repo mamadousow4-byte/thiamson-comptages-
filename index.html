@@ -100,7 +100,6 @@
             font-weight: 500;
         }
 
-        /* Le bouton devient un label natif relié directement à l'input file */
         .btn-upload {
             border: none;
             padding: 16px;
@@ -156,7 +155,7 @@
         .workspace {
             position: relative;
             width: 100%;
-            min-height: 300px;
+            height: 380px;
             background: #0f172a;
             border-radius: 14px;
             overflow: hidden;
@@ -164,6 +163,7 @@
             align-items: center;
             justify-content: center;
             border: 2px dashed var(--border-color);
+            touch-action: none;
         }
 
         .placeholder {
@@ -172,13 +172,12 @@
             padding: 24px;
             font-size: 0.9rem;
             line-height: 1.5;
+            position: absolute;
         }
 
         canvas {
-            max-width: 100%;
-            max-height: 55vh;
             display: block;
-            touch-action: none;
+            cursor: crosshair;
         }
 
         .mode-selector {
@@ -215,6 +214,23 @@
             border-radius: 10px;
             text-align: center;
         }
+
+        .zoom-controls {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .zoom-btn {
+            background: #e2e8f0;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            color: #334155;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -222,40 +238,40 @@
     <div class="container">
         <header>
             <h1>Thiamson Comptage</h1>
-            <p class="subtitle">Analyse visuelle & Pointage instantané</p>
+            <p class="subtitle">Analyse visuelle & Zoom Tactile</p>
         </header>
 
         <div class="result-card">
-            <div class="title-detected" id="status-title">Total Détecté</div>
+            <div class="title-detected" id="status-title">Total Sélectionné</div>
             <div class="value" id="count-display">0</div>
             <div class="status-tag" id="status-tag">Prêt pour la photo</div>
         </div>
 
-        <!-- Bouton natif transformé en label pour forcer l'ouverture de l'appareil/galerie sur mobile -->
         <label for="file-input" class="btn-upload">
             📷 Prendre une photo / Importer
         </label>
         <input type="file" id="file-input" accept="image/*" capture="environment" onchange="loadPhoto(event)">
 
-        <div class="mode-selector" id="mode-selector" style="display: none;">
-            <button class="mode-btn active" id="btn-auto-mode" onclick="setMode('auto')">⚡ Détection Auto</button>
-            <button class="mode-btn" id="btn-manual-mode" onclick="setMode('manual')">👆 Toucher pour compter</button>
+        <div class="zoom-controls" id="zoom-controls" style="display: none;">
+            <button class="zoom-btn" onclick="adjustZoom(-0.25)">🔍- Dézoomer</button>
+            <button class="zoom-btn" onclick="resetZoom()">1:1 Réinitialiser Zoom</button>
+            <button class="zoom-btn" onclick="adjustZoom(0.25)">🔍+ Zoomer</button>
         </div>
 
-        <div class="instructions" id="instructions" style="display: none;">
-            Prenez votre photo : les éléments sont calculés. En mode toucher, appuyez sur chaque objet pour le marquer.
-        </div>
-
-        <div class="workspace">
+        <div class="workspace" id="workspace">
             <div class="placeholder" id="placeholder">
-                Prenez une photo de vos rouleaux de tissus, bétail ou objets pour calculer leur nombre instantanément.
+                Prenez une photo. Vous pourrez zoomer et toucher chaque objet pour le compter proprement un par un.
             </div>
             <canvas id="photo-canvas" style="display: none;"></canvas>
         </div>
 
+        <div class="instructions" id="instructions" style="display: none;">
+            Zoomez si besoin, puis touchez les rouleaux ou bêtes pour ajouter un repère numéroté.
+        </div>
+
         <div style="display: flex; gap: 8px;">
-            <button class="btn btn-outline" id="undo-btn" onclick="undoLastMark()" style="display: none; flex: 1;">↩ Annuler dernier point</button>
-            <button class="btn btn-danger" onclick="resetAll()" style="flex: 1;">🔄 Réinitialiser</button>
+            <button class="btn btn-outline" id="undo-btn" onclick="undoLastMark()" style="display: none; flex: 1;">↩ Annuler dernier</button>
+            <button class="btn btn-danger" onclick="resetAll()" style="flex: 1;">🔄 Tout effacer</button>
         </div>
     </div>
 
@@ -263,18 +279,22 @@
         const fileInput = document.getElementById('file-input');
         const canvas = document.getElementById('photo-canvas');
         const ctx = canvas.getContext('2d');
+        const workspace = document.getElementById('workspace');
         const countDisplay = document.getElementById('count-display');
         const statusTitle = document.getElementById('status-title');
         const statusTag = document.getElementById('status-tag');
         const placeholder = document.getElementById('placeholder');
-        const modeSelector = document.getElementById('mode-selector');
         const instructions = document.getElementById('instructions');
         const undoBtn = document.getElementById('undo-btn');
+        const zoomControls = document.getElementById('zoom-controls');
 
         let currentImage = null;
         let marks = [];
-        let activeMode = 'auto';
-        let autoCount = 0;
+        let scale = 1;
+        let offsetX = 0;
+        let offsetY = 0;
+        let isDragging = false;
+        let startX, startY;
 
         function loadPhoto(event) {
             const file = event.target.files[0];
@@ -285,112 +305,50 @@
                 const img = new Image();
                 img.onload = function() {
                     currentImage = img;
-                    canvas.width = img.width;
-                    canvas.height = img.height;
+                    canvas.width = workspace.clientWidth;
+                    canvas.height = workspace.clientHeight;
                     
+                    // Centrer l'image au départ en mode "fit"
+                    const hRatio = canvas.width / img.width;
+                    const vRatio = canvas.height / img.height;
+                    scale = Math.min(hRatio, vRatio);
+                    
+                    offsetX = (canvas.width - img.width * scale) / 2;
+                    offsetY = (canvas.height - img.height * scale) / 2;
+
                     placeholder.style.display = 'none';
                     canvas.style.display = 'block';
-                    modeSelector.style.display = 'flex';
                     instructions.style.display = 'block';
+                    zoomControls.style.display = 'flex';
 
                     marks = [];
-                    processAutoAnalysis();
+                    redrawCanvas();
                 };
                 img.src = e.target.result;
             };
             reader.readAsDataURL(file);
         }
 
-        function processAutoAnalysis() {
-            if (!currentImage) return;
-
-            ctx.drawImage(currentImage, 0, 0);
-
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-            let edgePoints = 0;
-            const step = 8;
-
-            for (let i = 0; i < data.length; i += 4 * step) {
-                const r = data[i];
-                const g = data[i + 1];
-                const b = data[i + 2];
-                
-                const brightness = (r * 0.299 + g * 0.587 + b * 0.114);
-                if (brightness > 50 && brightness < 215) {
-                    edgePoints++;
-                }
-            }
-
-            const totalPixels = (canvas.width * canvas.height) / step;
-            const densityRatio = edgePoints / totalPixels;
-            
-            autoCount = Math.max(1, Math.round(densityRatio * 18));
-
-            if (activeMode === 'auto') {
-                statusTitle.innerText = "Éléments Détectés";
-                countDisplay.innerText = autoCount;
-                statusTag.innerText = "Analyse Visuelle Auto";
-                undoBtn.style.display = 'none';
-            }
-
-            redrawCanvas();
-        }
-
-        function setMode(mode) {
-            activeMode = mode;
-            document.getElementById('btn-auto-mode').classList.toggle('active', mode === 'auto');
-            document.getElementById('btn-manual-mode').classList.toggle('active', mode === 'manual');
-
-            if (mode === 'auto') {
-                statusTitle.innerText = "Éléments Détectés";
-                countDisplay.innerText = autoCount;
-                statusTag.innerText = "Analyse Visuelle Auto";
-                undoBtn.style.display = 'none';
-            } else {
-                statusTitle.innerText = "Comptage au Toucher";
-                countDisplay.innerText = marks.length;
-                statusTag.innerText = "Pointage Manuel Actif";
-                undoBtn.style.display = marks.length > 0 ? 'block' : 'none';
-            }
-
-            redrawCanvas();
-        }
-
-        canvas.addEventListener('pointerdown', function(e) {
-            if (!currentImage) return;
-
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-
-            const x = (e.clientX - rect.left) * scaleX;
-            const y = (e.clientY - rect.top) * scaleY;
-
-            marks.push({ x, y });
-
-            if (activeMode !== 'manual') {
-                setMode('manual');
-            } else {
-                countDisplay.innerText = marks.length;
-                undoBtn.style.display = 'block';
-                redrawCanvas();
-            }
-        });
-
         function redrawCanvas() {
             if (!currentImage) return;
 
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(offsetX, offsetY);
+            ctx.scale(scale, scale);
+
+            // Dessiner l'image originale
             ctx.drawImage(currentImage, 0, 0);
 
+            // Dessiner les repères de comptage
             marks.forEach((mark, index) => {
-                const radius = Math.max(12, canvas.width / 40);
+                const radius = Math.max(14, 18 / scale);
 
                 ctx.beginPath();
                 ctx.arc(mark.x, mark.y, radius, 0, 2 * Math.PI);
                 ctx.fillStyle = '#ef4444';
                 ctx.fill();
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 3 / scale;
                 ctx.strokeStyle = '#ffffff';
                 ctx.stroke();
 
@@ -400,13 +358,81 @@
                 ctx.textBaseline = 'middle';
                 ctx.fillText(index + 1, mark.x, mark.y);
             });
+
+            ctx.restore();
+
+            countDisplay.innerText = marks.length;
+            statusTitle.innerText = "Total Sélectionné";
+            statusTag.innerText = marks.length > 0 ? "Comptage en cours" : "Touchez pour compter";
+            undoBtn.style.display = marks.length > 0 ? 'block' : 'none';
         }
+
+        function adjustZoom(amount) {
+            if (!currentImage) return;
+            scale = Math.max(0.5, Math.min(5, scale + amount));
+            redrawCanvas();
+        }
+
+        function resetZoom() {
+            if (!currentImage) return;
+            const hRatio = canvas.width / currentImage.width;
+            const vRatio = canvas.height / currentImage.height;
+            scale = Math.min(hRatio, vRatio);
+            offsetX = (canvas.width - currentImage.width * scale) / 2;
+            offsetY = (canvas.height - currentImage.height * scale) / 2;
+            redrawCanvas();
+        }
+
+        // Gestion du tactile et de la souris pour déplacer ou pointer
+        let pointerDownTime = 0;
+        let pointerStartX = 0;
+        let pointerStartY = 0;
+
+        canvas.addEventListener('pointerdown', (e) => {
+            if (!currentImage) return;
+            isDragging = true;
+            pointerDownTime = Date.now();
+            pointerStartX = e.clientX;
+            pointerStartY = e.clientY;
+            startX = e.clientX - offsetX;
+            startY = e.clientY - offsetY;
+        });
+
+        canvas.addEventListener('pointermove', (e) => {
+            if (!isDragging || !currentImage) return;
+            offsetX = e.clientX - startX;
+            offsetY = e.clientY - startY;
+            redrawCanvas();
+        });
+
+        canvas.addEventListener('pointerup', (e) => {
+            if (!currentImage) return;
+            isDragging = false;
+            
+            // Si on a peu bougé et cliqué rapidement, on ajoute un point de comptage !
+            const moveDistance = Math.abs(e.clientX - pointerStartX) + Math.abs(e.clientY - pointerStartY);
+            const clickDuration = Date.now() - pointerDownTime;
+
+            if (moveDistance < 8 && clickDuration < 300) {
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+
+                // Transformer les coordonnées écran en coordonnées réelles sur l'image zoomée
+                const imgX = (clickX - offsetX) / scale;
+                const imgY = (clickY - offsetY) / scale;
+
+                // Vérifier si le clic est bien sur l'image
+                if (imgX >= 0 && imgX <= currentImage.width && imgY >= 0 && imgY <= currentImage.height) {
+                    marks.push({ x: imgX, y: imgY });
+                    redrawCanvas();
+                }
+            }
+        });
 
         function undoLastMark() {
             if (marks.length > 0) {
                 marks.pop();
-                countDisplay.innerText = marks.length;
-                if (marks.length === 0) undoBtn.style.display = 'none';
                 redrawCanvas();
             }
         }
@@ -414,15 +440,13 @@
         function resetAll() {
             currentImage = null;
             marks = [];
-            autoCount = 0;
             canvas.style.display = 'none';
             placeholder.style.display = 'block';
-            modeSelector.style.display = 'none';
             instructions.style.display = 'none';
+            zoomControls.style.display = 'none';
             undoBtn.style.display = 'none';
-
-            statusTitle.innerText = "Total Détecté";
             countDisplay.innerText = '0';
+            statusTitle.innerText = "Total Sélectionné";
             statusTag.innerText = "Prêt pour la photo";
             fileInput.value = '';
         }
